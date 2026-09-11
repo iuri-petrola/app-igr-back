@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma";
+import { Ministerio } from "../lib/ministerios";
 
 export type FotoItem = {
   id: number;
@@ -6,16 +7,19 @@ export type FotoItem = {
   dataUpload: string;
   imagemUrl: string;
   instagramUrl: string | null;
+  ministerio: Ministerio;
 };
 
 type FotoInput = {
   titulo: string;
   imagemUrl: string;
   instagramUrl: string | null;
+  ministerio: Ministerio;
 };
 
-export async function getFotos(): Promise<FotoItem[]> {
+export async function getFotos(ministerio?: Ministerio): Promise<FotoItem[]> {
   const rows = await prisma.photo.findMany({
+    where: ministerio ? { ministerio } : undefined,
     orderBy: { uploadedAt: "desc" }
   });
 
@@ -24,7 +28,8 @@ export async function getFotos(): Promise<FotoItem[]> {
     titulo: row.title,
     dataUpload: row.uploadedAt.toISOString(),
     imagemUrl: row.imageUrl,
-    instagramUrl: row.instagramUrl
+    instagramUrl: row.instagramUrl,
+    ministerio: row.ministerio as Ministerio
   }));
 }
 
@@ -33,7 +38,8 @@ export async function createFoto(input: FotoInput): Promise<FotoItem> {
     data: {
       title: input.titulo,
       imageUrl: input.imagemUrl,
-      instagramUrl: input.instagramUrl
+      instagramUrl: input.instagramUrl,
+      ministerio: input.ministerio
     }
   });
 
@@ -42,7 +48,8 @@ export async function createFoto(input: FotoInput): Promise<FotoItem> {
     titulo: created.title,
     dataUpload: created.uploadedAt.toISOString(),
     imagemUrl: created.imageUrl,
-    instagramUrl: created.instagramUrl
+    instagramUrl: created.instagramUrl,
+    ministerio: created.ministerio as Ministerio
   };
 }
 
@@ -57,7 +64,8 @@ export async function getFotoById(id: number): Promise<FotoItem | null> {
     titulo: row.title,
     dataUpload: row.uploadedAt.toISOString(),
     imagemUrl: row.imageUrl,
-    instagramUrl: row.instagramUrl
+    instagramUrl: row.instagramUrl,
+    ministerio: row.ministerio as Ministerio
   };
 }
 
@@ -72,7 +80,8 @@ export async function updateFoto(id: number, input: FotoInput): Promise<FotoItem
     data: {
       title: input.titulo,
       imageUrl: input.imagemUrl,
-      instagramUrl: input.instagramUrl
+      instagramUrl: input.instagramUrl,
+      ministerio: input.ministerio
     }
   });
 
@@ -81,7 +90,8 @@ export async function updateFoto(id: number, input: FotoInput): Promise<FotoItem
     titulo: updated.title,
     dataUpload: updated.uploadedAt.toISOString(),
     imagemUrl: updated.imageUrl,
-    instagramUrl: updated.instagramUrl
+    instagramUrl: updated.instagramUrl,
+    ministerio: updated.ministerio as Ministerio
   };
 }
 

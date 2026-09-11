@@ -12,6 +12,7 @@ model Photo {
   title      String
   imageUrl   String
   instagramUrl String?
+  ministerio String
   uploadedAt DateTime @default(now())
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

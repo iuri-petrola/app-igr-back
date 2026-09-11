@@ -1,11 +1,18 @@
 import { Request, Response } from "express";
 import { config } from "../config";
 import { getRequestBaseUrl } from "../lib/baseUrl";
+import { isMinisterio } from "../lib/ministerios";
 import { createFoto, deleteFoto, getFotoById, getFotos, updateFoto } from "../services/fotoService";
 
 export async function listFotos(req: Request, res: Response) {
+  const ministerio = req.query.ministerio;
+
+  if (ministerio !== undefined && !isMinisterio(ministerio)) {
+    return res.status(400).json({ error: "Ministerio invalido" });
+  }
+
   try {
-    const items = await getFotos();
+    const items = await getFotos(ministerio);
     const baseUrl = getRequestBaseUrl(req);
 
     const normalized = items.map((item) => ({
@@ -22,11 +29,15 @@ export async function listFotos(req: Request, res: Response) {
 }
 
 export async function createFotoItem(req: Request, res: Response) {
-  const { titulo, instagramUrl } = req.body as { titulo?: string; instagramUrl?: string };
+  const { titulo, instagramUrl, ministerio } = req.body as {
+    titulo?: string;
+    instagramUrl?: string;
+    ministerio?: string;
+  };
   const file = (req as Request & { file?: { filename: string } }).file;
 
-  if (!titulo || !file) {
-    return res.status(400).json({ error: "Campos obrigatorios: titulo, image(file)" });
+  if (!titulo || !file || !isMinisterio(ministerio)) {
+    return res.status(400).json({ error: "Campos obrigatorios: titulo, ministerio, image(file)" });
   }
 
   try {
@@ -34,7 +45,8 @@ export async function createFotoItem(req: Request, res: Response) {
     const created = await createFoto({
       titulo: titulo.trim(),
       imagemUrl,
-      instagramUrl: instagramUrl?.trim() || null
+      instagramUrl: instagramUrl?.trim() || null,
+      ministerio
     });
     return res.status(201).json(created);
   } catch (_error) {
@@ -44,15 +56,19 @@ export async function createFotoItem(req: Request, res: Response) {
 
 export async function updateFotoItem(req: Request, res: Response) {
   const id = Number(req.params.id);
-  const { titulo, instagramUrl } = req.body as { titulo?: string; instagramUrl?: string };
+  const { titulo, instagramUrl, ministerio } = req.body as {
+    titulo?: string;
+    instagramUrl?: string;
+    ministerio?: string;
+  };
   const file = (req as Request & { file?: { filename: string } }).file;
 
   if (!Number.isInteger(id) || id <= 0) {
     return res.status(400).json({ error: "ID invalido" });
   }
 
-  if (!titulo) {
-    return res.status(400).json({ error: "Campo obrigatorio: titulo" });
+  if (!titulo || !isMinisterio(ministerio)) {
+    return res.status(400).json({ error: "Campos obrigatorios: titulo, ministerio" });
   }
 
   try {
@@ -66,7 +82,8 @@ export async function updateFotoItem(req: Request, res: Response) {
     const updated = await updateFoto(id, {
       titulo: titulo.trim(),
       imagemUrl,
-      instagramUrl: instagramUrl?.trim() || null
+      instagramUrl: instagramUrl?.trim() || null,
+      ministerio
     });
     return res.json(updated);
   } catch (_error) {
