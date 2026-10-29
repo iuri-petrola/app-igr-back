@@ -1,7 +1,7 @@
 {
-  "name": "posso-orar-por-voce-backnodejs",
+  "name": "app-igr",
   "version": "1.0.0",
-  "description": "API para fotos e videos do Posso Orar Por Voce",
+  "description": "API do projeto app-igr",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
@@ -14,7 +14,7 @@
     "prd": "rm -rf dist/ && tsc && node dist/index.js"
   },
   "engines": {
-    "node": ">=18.20.8"
+    "node": ">=20.20.2 <21"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
