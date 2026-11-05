@@ -187,9 +187,8 @@ export async function createConviteAdmin(req: Request, res: Response) {
       return res.status(409).json({ error: "As inscricoes para este evento estao encerradas" });
     }
 
-    const frontendUrl = config.corsOrigin.replace(/\/$/, "");
     return res.status(201).json({
-      conviteUrl: `${frontendUrl}/eventos/${eventoId}/convite/${result.token}`,
+      conviteUrl: `${config.frontendBaseUrl}/eventos/${eventoId}/convite/${result.token}`,
       expiresAt: result.expiresAt,
       evento: { id: result.evento.id, titulo: result.evento.titulo },
       usuario: {

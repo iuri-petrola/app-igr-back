@@ -7,6 +7,7 @@ type JsonObject = Record<string, unknown>;
 export type AppConfig = {
   port: number;
   corsOrigin: string;
+  frontendBaseUrl: string;
   databaseUrl: string;
   uploadsDir: string;
   uploadsPublicPath: string;
@@ -51,6 +52,21 @@ function getPositiveNumber(config: JsonObject, fieldName: string): number {
   return value;
 }
 
+function getHttpUrl(config: JsonObject, fieldName: string): string {
+  const value = getString(config, fieldName).replace(/\/$/, "");
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error();
+    }
+  } catch (_error) {
+    throw new Error(`Configuracao invalida: ${fieldName} deve ser uma URL HTTP ou HTTPS`);
+  }
+
+  return value;
+}
+
 function loadConfig(): AppConfig {
   const configPath = process.env.CONFIG_PATH?.trim();
 
@@ -73,6 +89,7 @@ function loadConfig(): AppConfig {
   return {
     port: getPositiveNumber(rawConfig, "port"),
     corsOrigin: getString(rawConfig, "corsOrigin"),
+    frontendBaseUrl: getHttpUrl(rawConfig, "frontendBaseUrl"),
     databaseUrl: getString(rawConfig, "databaseUrl"),
     uploadsDir: getString(rawConfig, "uploadsDir"),
     uploadsPublicPath: getString(rawConfig, "uploadsPublicPath"),
