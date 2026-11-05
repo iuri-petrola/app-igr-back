@@ -19,8 +19,26 @@ export async function getEventoPublico(id: number) {
 
 export async function listEventosAdmin() {
   return prisma.evento.findMany({
-    include: { _count: { select: { inscricoes: true } } },
+    include: {
+      _count: { select: { inscricoes: true } },
+      inscricoes: {
+        select: { usuario: { select: { nome: true } } },
+        orderBy: { createdAt: "asc" }
+      }
+    },
     orderBy: { dataEvento: "desc" }
+  });
+}
+
+export async function listInscricoesEvento(eventoId: number) {
+  return prisma.inscricao.findMany({
+    where: { eventoId },
+    include: {
+      usuario: {
+        select: { id: true, nome: true, celular: true, email: true }
+      }
+    },
+    orderBy: { createdAt: "asc" }
   });
 }
 

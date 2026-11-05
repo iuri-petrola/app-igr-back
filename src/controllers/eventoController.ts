@@ -12,6 +12,7 @@ import {
   inscreverUsuario,
   listEventosAdmin,
   listEventosPublicos,
+  listInscricoesEvento,
   listUsuarios
 } from "../services/eventoService";
 
@@ -114,6 +115,24 @@ export async function createEventoAdmin(req: Request, res: Response) {
     return res.status(201).json(evento);
   } catch (_error) {
     return res.status(500).json({ error: "Erro ao criar evento" });
+  }
+}
+
+export async function showInscricoesEventoAdmin(req: Request, res: Response) {
+  const eventoId = parseId(req.params.id);
+  if (!eventoId) {
+    return res.status(400).json({ error: "Evento invalido" });
+  }
+
+  try {
+    const evento = await getEventoPublico(eventoId);
+    if (!evento) {
+      return res.status(404).json({ error: "Evento nao encontrado" });
+    }
+
+    return res.json(await listInscricoesEvento(eventoId));
+  } catch (_error) {
+    return res.status(500).json({ error: "Erro ao carregar inscritos" });
   }
 }
 
