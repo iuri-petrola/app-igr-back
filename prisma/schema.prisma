@@ -49,6 +49,7 @@ model Usuario {
   celular    String      @unique
   email      String?
   inscricoes Inscricao[]
+  convites   ConviteInscricao[]
   createdAt  DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime    @updatedAt @db.Timestamptz(3)
 
@@ -64,6 +65,7 @@ model Evento {
   prazoInscricao       DateTime?     @db.Timestamptz(3)
   inscricoesAbertas    Boolean     @default(true)
   inscricoes           Inscricao[]
+  convites             ConviteInscricao[]
   createdAt            DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt            DateTime    @updatedAt @db.Timestamptz(3)
 
@@ -80,4 +82,19 @@ model Inscricao {
 
   @@unique([eventoId, usuarioId])
   @@map("inscricoes")
+}
+
+model ConviteInscricao {
+  id         Int       @id @default(autoincrement())
+  eventoId   Int
+  usuarioId  Int
+  tokenHash  String    @unique
+  expiresAt  DateTime  @db.Timestamptz(3)
+  usedAt     DateTime? @db.Timestamptz(3)
+  evento     Evento    @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@unique([eventoId, usuarioId])
+  @@map("convites_inscricao")
 }

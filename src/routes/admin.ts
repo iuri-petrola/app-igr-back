@@ -2,6 +2,7 @@ import { Router } from "express";
 import { adminLogin } from "../controllers/admin/authController";
 import {
   createEventoAdmin,
+  createConviteAdmin,
   createUsuarioAdmin,
   showEventosAdmin,
   showUsuariosAdmin
@@ -15,5 +16,6 @@ adminRouter.post("/login", adminLogin);
 adminRouter.get("/pedidos", requireAdmin, showPedidos);
 adminRouter.get("/eventos", requireAdmin, showEventosAdmin);
 adminRouter.post("/eventos", requireAdmin, createEventoAdmin);
+adminRouter.post("/eventos/:id/convites", requireAdmin, createConviteAdmin);
 adminRouter.get("/usuarios", requireAdmin, showUsuariosAdmin);
 adminRouter.post("/usuarios", requireAdmin, createUsuarioAdmin);
