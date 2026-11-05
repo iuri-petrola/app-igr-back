@@ -3,6 +3,7 @@ import express from "express";
 import { config } from "./config";
 import { adminRouter } from "./routes/admin";
 import { contatoRouter } from "./routes/contato";
+import { eventosRouter } from "./routes/eventos";
 import { fotosRouter } from "./routes/fotos";
 import { palavraDoDiaRouter } from "./routes/palavraDoDia";
 import { pedidosRouter } from "./routes/pedidos";
@@ -21,6 +22,7 @@ app.get("/health", (_req, res) => {
 app.use(config.uploadsPublicPath, express.static(config.uploadsDir));
 
 app.use("/api/contato", contatoRouter);
+app.use("/api/eventos", eventosRouter);
 app.use("/api/fotos", fotosRouter);
 app.use("/api/pedidos", pedidosRouter);
 app.use("/api/palavra-do-dia", palavraDoDiaRouter);
