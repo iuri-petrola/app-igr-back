@@ -7,6 +7,7 @@ import { eventosRouter } from "./routes/eventos";
 import { fotosRouter } from "./routes/fotos";
 import { palavraDoDiaRouter } from "./routes/palavraDoDia";
 import { pedidosRouter } from "./routes/pedidos";
+import { usuariosRouter } from "./routes/usuarios";
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/api/contato", contatoRouter);
 app.use("/api/eventos", eventosRouter);
 app.use("/api/fotos", fotosRouter);
 app.use("/api/pedidos", pedidosRouter);
+app.use("/api/usuarios", usuariosRouter);
 app.use("/api/palavra-do-dia", palavraDoDiaRouter);
 app.use("/api/admin", adminRouter);
 

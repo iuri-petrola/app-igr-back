@@ -1,10 +1,4 @@
-import { Prisma } from "@prisma/client";
-import crypto from "crypto";
 import { prisma } from "../lib/prisma";
-
-function hashToken(token: string): string {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
 
 export async function listEventosPublicos() {
   return prisma.evento.findMany({
@@ -22,7 +16,7 @@ export async function listEventosAdmin() {
     include: {
       _count: { select: { inscricoes: true } },
       inscricoes: {
-        select: { usuario: { select: { nome: true } } },
+        select: { nome: true },
         orderBy: { createdAt: "asc" }
       }
     },
@@ -34,9 +28,7 @@ export async function listInscricoesEvento(eventoId: number) {
   return prisma.inscricao.findMany({
     where: { eventoId },
     include: {
-      usuario: {
-        select: { id: true, nome: true, celular: true, email: true }
-      }
+      usuario: { select: { id: true, nome: true, celular: true, email: true } }
     },
     orderBy: { createdAt: "asc" }
   });
@@ -56,13 +48,33 @@ export async function listUsuarios() {
   return prisma.usuario.findMany({ orderBy: { nome: "asc" } });
 }
 
+export async function searchUsuariosByName(nome: string) {
+  return prisma.usuario.findMany({
+    where: { nome: { contains: nome, mode: "insensitive" } },
+    select: { id: true, nome: true },
+    orderBy: { nome: "asc" },
+    take: 8
+  });
+}
+
 export async function createUsuario(input: { nome: string; celular: string; email: string | null }) {
   return prisma.usuario.create({ data: input });
 }
 
-export async function inscreverUsuario(eventoId: number, celular: string) {
-  const evento = await prisma.evento.findUnique({ where: { id: eventoId } });
+function normalizeNome(nome: string): string {
+  return nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
+export async function inscreverParticipantes(
+  eventoId: number,
+  participantesInput: Array<{ nome: string; usuarioId: number | null }>
+) {
+  const evento = await prisma.evento.findUnique({ where: { id: eventoId } });
   if (!evento) {
     return { status: "evento_nao_encontrado" as const };
   }
@@ -72,109 +84,36 @@ export async function inscreverUsuario(eventoId: number, celular: string) {
     return { status: "inscricoes_encerradas" as const };
   }
 
-  const usuario = await prisma.usuario.findUnique({ where: { celular } });
-  if (!usuario) {
-    return { status: "usuario_nao_encontrado" as const };
+  const usuarioIds = participantesInput
+    .map((participante) => participante.usuarioId)
+    .filter((id): id is number => id !== null);
+  const usuarios = usuarioIds.length > 0
+    ? await prisma.usuario.findMany({ where: { id: { in: usuarioIds } } })
+    : [];
+  const usuariosPorId = new Map(usuarios.map((usuario) => [usuario.id, usuario]));
+
+  if (usuarios.length !== new Set(usuarioIds).size) {
+    return { status: "usuario_invalido" as const };
   }
 
-  try {
-    const inscricao = await prisma.inscricao.create({
-      data: { eventoId, usuarioId: usuario.id }
-    });
-    return { status: "criada" as const, inscricao, usuario };
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return { status: "ja_inscrito" as const, usuario };
-    }
-    throw error;
-  }
-}
-
-export async function createConviteInscricao(eventoId: number, usuarioId: number) {
-  const [evento, usuario] = await Promise.all([
-    prisma.evento.findUnique({ where: { id: eventoId } }),
-    prisma.usuario.findUnique({ where: { id: usuarioId } })
-  ]);
-
-  if (!evento) {
-    return { status: "evento_nao_encontrado" as const };
-  }
-  if (!usuario) {
-    return { status: "usuario_nao_encontrado" as const };
-  }
-
-  const agora = new Date();
-  const expiresAt = evento.prazoInscricao ?? evento.dataEvento;
-  if (!evento.inscricoesAbertas || expiresAt <= agora) {
-    return { status: "inscricoes_encerradas" as const };
-  }
-
-  // Somente o hash fica salvo; o token original aparece uma vez no link gerado.
-  const token = crypto.randomBytes(32).toString("base64url");
-  await prisma.conviteInscricao.upsert({
-    where: { eventoId_usuarioId: { eventoId, usuarioId } },
-    create: { eventoId, usuarioId, tokenHash: hashToken(token), expiresAt },
-    update: { tokenHash: hashToken(token), expiresAt, usedAt: null }
+  const participantes = participantesInput.map((participante) => {
+    const usuario = participante.usuarioId ? usuariosPorId.get(participante.usuarioId) : null;
+    const nome = (usuario?.nome ?? participante.nome).trim().replace(/\s+/g, " ");
+    return {
+      nome,
+      nomeNormalizado: normalizeNome(nome),
+      usuarioId: usuario?.id ?? null
+    };
   });
 
-  return { status: "criado" as const, token, evento, usuario, expiresAt };
-}
-
-export async function getConviteInscricao(eventoId: number, token: string) {
-  const convite = await prisma.conviteInscricao.findUnique({
-    where: { tokenHash: hashToken(token) },
-    include: { evento: true, usuario: true }
-  });
-
-  if (!convite || convite.eventoId !== eventoId) {
-    return { status: "convite_invalido" as const };
-  }
-  if (convite.expiresAt <= new Date() || !convite.evento.inscricoesAbertas) {
-    return { status: "convite_expirado" as const };
-  }
-
-  const inscricao = await prisma.inscricao.findUnique({
-    where: { eventoId_usuarioId: { eventoId, usuarioId: convite.usuarioId } }
+  const resultado = await prisma.inscricao.createMany({
+    data: participantes.map((participante) => ({ eventoId, ...participante })),
+    skipDuplicates: true
   });
 
   return {
-    status: inscricao ? "ja_inscrito" as const : "valido" as const,
-    evento: convite.evento,
-    usuario: convite.usuario
+    status: "criadas" as const,
+    quantidade: resultado.count,
+    duplicadas: participantes.length - resultado.count
   };
-}
-
-export async function confirmarConviteInscricao(eventoId: number, token: string) {
-  const convite = await prisma.conviteInscricao.findUnique({
-    where: { tokenHash: hashToken(token) },
-    include: { evento: true, usuario: true }
-  });
-
-  if (!convite || convite.eventoId !== eventoId) {
-    return { status: "convite_invalido" as const };
-  }
-  if (convite.usedAt) {
-    return { status: "ja_inscrito" as const, usuario: convite.usuario };
-  }
-  if (convite.expiresAt <= new Date() || !convite.evento.inscricoesAbertas) {
-    return { status: "convite_expirado" as const };
-  }
-
-  try {
-    await prisma.$transaction([
-      prisma.inscricao.create({
-        data: { eventoId, usuarioId: convite.usuarioId }
-      }),
-      prisma.conviteInscricao.update({
-        where: { id: convite.id },
-        data: { usedAt: new Date() }
-      })
-    ]);
-    return { status: "criada" as const, usuario: convite.usuario };
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return { status: "ja_inscrito" as const, usuario: convite.usuario };
-    }
-    throw error;
-  }
 }

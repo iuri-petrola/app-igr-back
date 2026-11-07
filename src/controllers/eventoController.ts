@@ -4,15 +4,13 @@ import { config } from "../config";
 import { normalizeCelular } from "../lib/celular";
 import {
   createEvento,
-  createConviteInscricao,
   createUsuario,
-  confirmarConviteInscricao,
-  getConviteInscricao,
   getEventoPublico,
-  inscreverUsuario,
+  inscreverParticipantes,
   listEventosAdmin,
   listEventosPublicos,
   listInscricoesEvento,
+  searchUsuariosByName,
   listUsuarios
 } from "../services/eventoService";
 
@@ -20,7 +18,6 @@ function parseId(value: string): number | null {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
 }
-
 function parseDate(value: unknown): Date | null {
   if (typeof value !== "string" || !value.trim()) {
     return null;
@@ -54,14 +51,32 @@ export async function showEventoPublico(req: Request, res: Response) {
 
 export async function createInscricao(req: Request, res: Response) {
   const eventoId = parseId(req.params.id);
-  const celular = normalizeCelular(String(req.body?.celular ?? ""));
+  const participantes = Array.isArray(req.body?.participantes)
+    ? req.body.participantes.filter((participante: unknown) => {
+        if (!participante || typeof participante !== "object") {
+          return false;
+        }
+        const item = participante as { nome?: unknown };
+        return typeof item.nome === "string" && !!item.nome.trim();
+      }) as Array<{ nome: string; usuarioId?: unknown }>
+    : [];
 
-  if (!eventoId || !celular) {
-    return res.status(400).json({ error: "Informe um celular valido com DDD" });
+  if (!eventoId || participantes.length === 0 || participantes.length > 20) {
+    return res.status(400).json({ error: "Informe entre 1 e 20 participantes" });
+  }
+  if (participantes.some((participante) => participante.nome.trim().length < 2 || participante.nome.trim().length > 120)) {
+    return res.status(400).json({ error: "Cada nome deve ter entre 2 e 120 caracteres" });
   }
 
+  const participantesValidos = participantes.map((participante) => ({
+    nome: participante.nome,
+    usuarioId: Number.isInteger(participante.usuarioId) && Number(participante.usuarioId) > 0
+      ? Number(participante.usuarioId)
+      : null
+  }));
+
   try {
-    const result = await inscreverUsuario(eventoId, celular);
+    const result = await inscreverParticipantes(eventoId, participantesValidos);
 
     if (result.status === "evento_nao_encontrado") {
       return res.status(404).json({ error: "Evento nao encontrado" });
@@ -69,24 +84,44 @@ export async function createInscricao(req: Request, res: Response) {
     if (result.status === "inscricoes_encerradas") {
       return res.status(409).json({ error: "As inscricoes para este evento estao encerradas" });
     }
-    if (result.status === "usuario_nao_encontrado") {
-      return res.status(404).json({ error: "Celular nao encontrado no cadastro da igreja" });
+    if (result.status === "usuario_invalido") {
+      return res.status(400).json({ error: "Um dos usuarios selecionados nao foi encontrado" });
     }
-    if (result.status === "ja_inscrito") {
-      return res.status(409).json({ error: `${result.usuario.nome}, sua inscricao ja foi realizada` });
+    if (result.quantidade === 0) {
+      return res.status(409).json({ error: "Todos os nomes informados ja estao inscritos" });
     }
-
     return res.status(201).json({
-      message: `${result.usuario.nome}, sua inscricao foi realizada com sucesso`
+      message: result.quantidade === 1
+        ? "Inscricao realizada com sucesso"
+        : `${result.quantidade} inscricoes realizadas com sucesso`,
+      quantidade: result.quantidade,
+      duplicadas: result.duplicadas
     });
   } catch (_error) {
     return res.status(500).json({ error: "Erro ao realizar inscricao" });
   }
 }
 
+export async function searchUsuariosPublicos(req: Request, res: Response) {
+  const nome = typeof req.query.nome === "string" ? req.query.nome.trim() : "";
+  if (nome.length < 3) {
+    return res.json([]);
+  }
+
+  try {
+    return res.json(await searchUsuariosByName(nome.slice(0, 80)));
+  } catch (_error) {
+    return res.status(500).json({ error: "Erro ao pesquisar usuarios" });
+  }
+}
+
 export async function showEventosAdmin(_req: Request, res: Response) {
   try {
-    return res.json(await listEventosAdmin());
+    const eventos = await listEventosAdmin();
+    return res.json(eventos.map((evento) => ({
+      ...evento,
+      linkInscricao: `${config.frontendBaseUrl}/eventos/${evento.id}/inscricao`
+    })));
   } catch (_error) {
     return res.status(500).json({ error: "Erro ao carregar eventos" });
   }
@@ -164,93 +199,5 @@ export async function createUsuarioAdmin(req: Request, res: Response) {
       return res.status(409).json({ error: "Este celular ja esta cadastrado" });
     }
     return res.status(500).json({ error: "Erro ao cadastrar usuario" });
-  }
-}
-
-export async function createConviteAdmin(req: Request, res: Response) {
-  const eventoId = parseId(req.params.id);
-  const usuarioId = Number(req.body?.usuarioId);
-
-  if (!eventoId || !Number.isInteger(usuarioId) || usuarioId <= 0) {
-    return res.status(400).json({ error: "Evento ou usuario invalido" });
-  }
-
-  try {
-    const result = await createConviteInscricao(eventoId, usuarioId);
-    if (result.status === "evento_nao_encontrado") {
-      return res.status(404).json({ error: "Evento nao encontrado" });
-    }
-    if (result.status === "usuario_nao_encontrado") {
-      return res.status(404).json({ error: "Usuario nao encontrado" });
-    }
-    if (result.status === "inscricoes_encerradas") {
-      return res.status(409).json({ error: "As inscricoes para este evento estao encerradas" });
-    }
-
-    return res.status(201).json({
-      conviteUrl: `${config.frontendBaseUrl}/eventos/${eventoId}/convite/${result.token}`,
-      expiresAt: result.expiresAt,
-      evento: { id: result.evento.id, titulo: result.evento.titulo },
-      usuario: {
-        id: result.usuario.id,
-        nome: result.usuario.nome,
-        celular: result.usuario.celular
-      }
-    });
-  } catch (_error) {
-    return res.status(500).json({ error: "Erro ao gerar convite" });
-  }
-}
-
-export async function showConvite(req: Request, res: Response) {
-  const eventoId = parseId(req.params.id);
-  const token = req.params.token;
-  if (!eventoId || !token) {
-    return res.status(400).json({ error: "Convite invalido" });
-  }
-
-  try {
-    const result = await getConviteInscricao(eventoId, token);
-    if (result.status === "convite_invalido") {
-      return res.status(404).json({ error: "Convite invalido" });
-    }
-    if (result.status === "convite_expirado") {
-      return res.status(410).json({ error: "Este convite expirou" });
-    }
-
-    return res.json({
-      evento: result.evento,
-      usuarioNome: result.usuario.nome,
-      jaInscrito: result.status === "ja_inscrito"
-    });
-  } catch (_error) {
-    return res.status(500).json({ error: "Erro ao carregar convite" });
-  }
-}
-
-export async function confirmConvite(req: Request, res: Response) {
-  const eventoId = parseId(req.params.id);
-  const token = req.params.token;
-  if (!eventoId || !token) {
-    return res.status(400).json({ error: "Convite invalido" });
-  }
-
-  try {
-    const result = await confirmarConviteInscricao(eventoId, token);
-    if (result.status === "convite_invalido") {
-      return res.status(404).json({ error: "Convite invalido" });
-    }
-    if (result.status === "convite_expirado") {
-      return res.status(410).json({ error: "Este convite expirou" });
-    }
-    if (result.status === "ja_inscrito") {
-      return res.status(409).json({ error: `${result.usuario.nome}, sua inscricao ja foi realizada` });
-    }
-
-    return res.status(201).json({
-      message: `${result.usuario.nome}, sua inscricao foi realizada com sucesso`
-    });
-  } catch (_error) {
-    return res.status(500).json({ error: "Erro ao confirmar inscricao" });
   }
 }
