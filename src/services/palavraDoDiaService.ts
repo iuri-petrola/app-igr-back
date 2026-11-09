@@ -10,16 +10,27 @@ export type PalavraDoDia = {
   fonte: string;
 };
 
-type BibleApiRandomVerseResponse = {
-  translation?: {
-    identifier?: string;
-    name?: string;
-  };
-  random_verse?: {
-    book?: string;
-    chapter?: number;
-    verse?: number;
-    text?: string;
+type BibleBook = {
+  id: string;
+  name: string;
+  numberOfChapters: number;
+};
+
+type BibleBooksResponse = {
+  translation?: { name?: string };
+  books?: BibleBook[];
+};
+
+type BibleVerseContent = {
+  type?: string;
+  number?: number;
+  content?: unknown[];
+};
+
+type BibleChapterResponse = {
+  chapter?: {
+    number?: number;
+    content?: BibleVerseContent[];
   };
 };
 
@@ -45,9 +56,15 @@ function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-// Monta a URL do endpoint que devolve um versiculo aleatorio na traducao configurada.
-function buildBibleApiRandomVerseUrl(baseUrl: string, translation: string): string {
-  return `${baseUrl}/data/${encodeURIComponent(translation)}/random`;
+// Gera sempre a mesma posicao para uma data, mesmo que o servidor reinicie.
+function getDailyIndex(dayKey: string, salt: string, total: number): number {
+  let hash = 0;
+
+  for (const character of `${dayKey}:${salt}`) {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+
+  return hash % total;
 }
 
 // Faz a chamada externa e aborta a requisicao se o tempo limite for atingido.
@@ -57,9 +74,7 @@ async function fetchFromBibleApiWithTimeout(url: string, timeoutMs: number): Pro
 
   try {
     return await fetch(url, {
-      headers: {
-        Accept: "application/json"
-      },
+      headers: { Accept: "application/json" },
       signal: controller.signal
     });
   } finally {
@@ -67,24 +82,34 @@ async function fetchFromBibleApiWithTimeout(url: string, timeoutMs: number): Pro
   }
 }
 
-// Converte a resposta bruta da Bible API para o formato interno usado pelo frontend.
-function mapBibleApiResponse(payload: BibleApiRandomVerseResponse): PalavraDoDia | null {
-  const verse = payload.random_verse;
-  const translation = payload.translation;
+async function fetchBibleApiJson<T>(path: string): Promise<T> {
+  const response = await fetchFromBibleApiWithTimeout(
+    `${config.bibleApi.baseUrl}${path}`,
+    config.bibleApi.timeoutMs
+  );
 
-  if (!verse?.book || !verse.chapter || !verse.verse || !verse.text || !translation?.name) {
-    return null;
+  if (!response.ok) {
+    throw new Error(`Falha ao buscar palavra do dia na Bible API: ${response.status}`);
   }
 
-  return {
-    texto: normalizeText(verse.text),
-    livro: verse.book,
-    capitulo: verse.chapter,
-    versiculo: verse.verse,
-    referencia: `${verse.book} ${verse.chapter}:${verse.verse}`,
-    traducao: translation.name,
-    fonte: "bible-api"
-  };
+  return (await response.json()) as T;
+}
+
+// Extrai somente o texto, ignorando marcacoes e notas presentes na resposta.
+function extractText(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content.map(extractText).join(" ");
+  }
+
+  if (content && typeof content === "object" && "text" in content) {
+    return extractText((content as { text?: unknown }).text);
+  }
+
+  return "";
 }
 
 export async function getPalavraDoDia(): Promise<PalavraDoDia> {
@@ -94,21 +119,49 @@ export async function getPalavraDoDia(): Promise<PalavraDoDia> {
     return cache.value;
   }
 
-  const response = await fetchFromBibleApiWithTimeout(
-    buildBibleApiRandomVerseUrl(config.bibleApi.baseUrl, config.bibleApi.translation),
-    config.bibleApi.timeoutMs
+  const translation = encodeURIComponent(config.bibleApi.translation);
+  const booksPayload = await fetchBibleApiJson<BibleBooksResponse>(
+    `/api/${translation}/books.json`
   );
-  if (!response.ok) {
-    throw new Error(`Falha ao buscar palavra do dia na Bible API: ${response.status}`);
+  // Mantem apenas os livros autorizados no config.json.
+  const books = (booksPayload.books ?? []).filter((book) =>
+    config.bibleApi.allowedBooks.includes(book.id.toUpperCase())
+  );
+
+  if (!books.length) {
+    throw new Error("Nenhum dos livros configurados foi encontrado na Bible API");
   }
 
-  const payload = (await response.json()) as BibleApiRandomVerseResponse;
-  const parsed = mapBibleApiResponse(payload);
+  const book = books[getDailyIndex(dayKey, "book", books.length)];
+  const chapterNumber = getDailyIndex(dayKey, "chapter", book.numberOfChapters) + 1;
+  const chapterPayload = await fetchBibleApiJson<BibleChapterResponse>(
+    `/api/${translation}/${encodeURIComponent(book.id)}/${chapterNumber}.json`
+  );
+  const verses = (chapterPayload.chapter?.content ?? []).filter(
+    (item) => item.type === "verse" && item.number && item.content
+  );
 
-  if (!parsed) {
+  if (!verses.length) {
+    throw new Error("A Bible API nao retornou versiculos para o capitulo selecionado");
+  }
+
+  const verse = verses[getDailyIndex(dayKey, "verse", verses.length)];
+  const text = normalizeText(extractText(verse.content));
+
+  if (!verse.number || !text) {
     throw new Error("Resposta da Bible API em formato inesperado");
   }
 
-  cache = { dayKey, value: parsed };
-  return parsed;
+  const value: PalavraDoDia = {
+    texto: text,
+    livro: book.name,
+    capitulo: chapterNumber,
+    versiculo: verse.number,
+    referencia: `${book.name} ${chapterNumber}:${verse.number}`,
+    traducao: booksPayload.translation?.name ?? config.bibleApi.translation,
+    fonte: "bible.helloao.org"
+  };
+
+  cache = { dayKey, value };
+  return value;
 }

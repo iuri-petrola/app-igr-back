@@ -5,7 +5,8 @@ export async function showPalavraDoDia(_req: Request, res: Response) {
   try {
     const payload = await getPalavraDoDia();
     return res.json(payload);
-  } catch (_error) {
+  } catch (error) {
+    console.error("Erro ao carregar palavra do dia:", error);
     return res.status(500).json({ error: "Erro ao carregar palavra do dia" });
   }
 }

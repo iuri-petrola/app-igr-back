@@ -16,6 +16,7 @@ export type AppConfig = {
     translation: string;
     timeoutMs: number;
     timeZone: string;
+    allowedBooks: string[];
   };
   jwt: {
     secret: string;
@@ -50,6 +51,20 @@ function getPositiveNumber(config: JsonObject, fieldName: string): number {
   }
 
   return value;
+}
+
+function getStringArray(config: JsonObject, fieldName: string): string[] {
+  const value = config[fieldName];
+
+  if (
+    !Array.isArray(value) ||
+    !value.length ||
+    value.some((item) => typeof item !== "string" || !item.trim())
+  ) {
+    throw new Error(`Configuracao invalida: ${fieldName} deve ser uma lista de textos`);
+  }
+
+  return value.map((item) => (item as string).trim().toUpperCase());
 }
 
 function getHttpUrl(config: JsonObject, fieldName: string): string {
@@ -97,7 +112,8 @@ function loadConfig(): AppConfig {
       baseUrl: getString(bibleApi, "baseUrl"),
       translation: getString(bibleApi, "translation"),
       timeoutMs: getPositiveNumber(bibleApi, "timeoutMs"),
-      timeZone: getString(bibleApi, "timeZone")
+      timeZone: getString(bibleApi, "timeZone"),
+      allowedBooks: getStringArray(bibleApi, "allowedBooks")
     },
     jwt: {
       secret: getString(jwt, "secret"),
