@@ -17,7 +17,7 @@ app.use(cors({ origin: config.corsOrigin }));
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: `Ok API rodando na porta ${config.port}` });
 });
 
 app.use(config.uploadsPublicPath, express.static(config.uploadsDir));
